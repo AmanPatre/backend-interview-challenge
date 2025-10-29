@@ -1,62 +1,135 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { TaskService } from '../services/taskService';
 import { SyncService } from '../services/syncService';
 import { Database } from '../db/database';
+import { Task } from '../types'; 
 
 export function createTaskRouter(db: Database): Router {
   const router = Router();
+  
   const taskService = new TaskService(db);
-  const syncService = new SyncService(db, taskService);
-
-  // Get all tasks
-  router.get('/', async (req: Request, res: Response) => {
+  
+  router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     try {
       const tasks = await taskService.getAllTasks();
       res.json(tasks);
     } catch (error) {
-      res.status(500).json({ error: 'Failed to fetch tasks' });
+      
+      next(error);
     }
   });
 
-  // Get single task
-  router.get('/:id', async (req: Request, res: Response) => {
+  
+  router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     try {
       const task = await taskService.getTask(req.params.id);
       if (!task) {
+        
         return res.status(404).json({ error: 'Task not found' });
       }
       res.json(task);
     } catch (error) {
-      res.status(500).json({ error: 'Failed to fetch task' });
+      next(error);
     }
   });
 
-  // Create task
-  router.post('/', async (req: Request, res: Response) => {
-    // TODO: Implement task creation endpoint
-    // 1. Validate request body
-    // 2. Call taskService.createTask()
-    // 3. Return created task
-    res.status(501).json({ error: 'Not implemented' });
+  
+  router.post('/', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      
+      const { title, description } = req.body;
+      if (!title || typeof title !== 'string' || title.trim() === '') {
+        return res.status(400).json({ error: 'Title is required' });
+      }
+      if (
+        description !== undefined &&
+        (typeof description !== 'string' || description.length > 500) 
+      ) {
+        return res
+          .status(400)
+          .json({ error: 'Description must be a string up to 500 chars' });
+      }
+
+      const taskData: Partial<Task> = { title, description };
+
+      
+      const newTask = await taskService.createTask(taskData);
+
+      
+      res.status(201).json(newTask);
+    } catch (error) {
+      next(error);
+    }
   });
 
-  // Update task
-  router.put('/:id', async (req: Request, res: Response) => {
-    // TODO: Implement task update endpoint
-    // 1. Validate request body
-    // 2. Call taskService.updateTask()
-    // 3. Handle not found case
-    // 4. Return updated task
-    res.status(501).json({ error: 'Not implemented' });
+  
+  router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const { title, description, completed } = req.body;
+
+      
+      if (
+        title === undefined &&
+        description === undefined &&
+        completed === undefined
+      ) {
+        return res
+          .status(400)
+          .json({ error: 'At least one field to update is required' });
+      }
+
+      
+      if (title !== undefined && typeof title !== 'string') {
+        return res.status(400).json({ error: 'Title must be a string' });
+      }
+      if (description !== undefined && typeof description !== 'string') {
+        return res
+          .status(400)
+          .json({ error: 'Description must be a string' });
+      }
+      if (completed !== undefined && typeof completed !== 'boolean') {
+        return res.status(400).json({ error: 'Completed must be a boolean' });
+      }
+
+      const updates: Partial<Task> = {};
+      if (title !== undefined) updates.title = title;
+      if (description !== undefined) updates.description = description;
+      if (completed !== undefined) updates.completed = completed;
+
+      
+      const updatedTask = await taskService.updateTask(id, updates);
+
+      
+      if (!updatedTask) {
+        return res.status(404).json({ error: 'Task not found' });
+      }
+
+      
+      res.json(updatedTask);
+    } catch (error) {
+      next(error);
+    }
   });
 
-  // Delete task
-  router.delete('/:id', async (req: Request, res: Response) => {
-    // TODO: Implement task deletion endpoint
-    // 1. Call taskService.deleteTask()
-    // 2. Handle not found case
-    // 3. Return success response
-    res.status(501).json({ error: 'Not implemented' });
+  
+  router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+
+      
+      const success = await taskService.deleteTask(id);
+
+     
+      if (!success) {
+        return res.status(404).json({ error: 'Task not found' });
+      }
+
+     
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
   });
 
   return router;

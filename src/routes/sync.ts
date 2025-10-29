@@ -19,15 +19,15 @@ export function createSyncRouter(db: Database): Router {
       }
 
       const syncResult = await syncService.sync();
-      return res.status(200).json(syncResult); // Added return
+      return res.status(200).json(syncResult);
     } catch (error) {
       next(error);
-      return; // Added return after next()
+      return;
     }
   });
 
   router.get('/status', async (
-     _: Request, // Mark req as unused
+     _: Request,
      res: Response,
      next: NextFunction
    ) => {
@@ -45,7 +45,7 @@ export function createSyncRouter(db: Database): Router {
       const isOnline = await syncService.checkConnectivity();
       const syncQueueSize = pendingSyncCount;
 
-      return res.status(200).json({ // Added return
+      return res.status(200).json({
         pending_sync_count: pendingSyncCount,
         last_sync_timestamp: lastSyncTimestamp,
         is_online: isOnline,
@@ -53,7 +53,7 @@ export function createSyncRouter(db: Database): Router {
       });
     } catch (error) {
       next(error);
-      return; // Added return after next()
+      return;
     }
   });
 
@@ -90,16 +90,15 @@ export function createSyncRouter(db: Database): Router {
         console.log(`Simulating conflict resolution for task ${items[1].task_id}`);
      }
 
-    return res.status(200).json({ processed_items }); // Added return
+    return res.status(200).json({ processed_items });
   });
 
   router.get('/health', async (
-     _: Request, // Mark req as unused
+     _: Request,
      res: Response
   ) => {
-    return res.json({ status: 'ok', timestamp: new Date() }); // Added return
+    return res.json({ status: 'ok', timestamp: new Date() });
   });
 
   return router;
 }
-

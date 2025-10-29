@@ -8,11 +8,11 @@ export function errorHandler(
   err: AppError,
   req: Request,
   res: Response,
-  // --- FIX: Disable eslint rule for the unused 'next' parameter ---
-  _: NextFunction // eslint-disable-line @typescript-eslint/no-unused-vars
-  // ------------------------------------------------------------------
+  
+ _: NextFunction // eslint-disable-line @typescript-eslint/no-unused-vars
+ 
 ): void {
-  console.error('Error:', err.stack || err); // Log stack trace
+  console.error('Error:', err.stack || err); 
 
   const statusCode = err.statusCode || 500;
   const message = process.env.NODE_ENV === 'production' && statusCode === 500

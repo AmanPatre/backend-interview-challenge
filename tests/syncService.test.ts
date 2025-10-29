@@ -4,7 +4,7 @@ import { TaskService } from '../src/services/taskService';
 import { SyncService } from '../src/services/syncService';
 import axios from 'axios';
 
-// Mock axios
+
 vi.mock('axios');
 
 describe('SyncService', () => {
@@ -44,7 +44,7 @@ describe('SyncService', () => {
     it('should add operation to sync queue', async () => {
       const task = await taskService.createTask({ title: 'Test Task' });
       
-      // Note: This test is slightly indirect. We are calling taskService,
+      //  This test is slightly indirect. We are calling taskService,
       // which should internally call addToSyncQueue.
       // But for this structure, we verify the result.
 
@@ -54,18 +54,18 @@ describe('SyncService', () => {
       });
 
       const queueItems = await db.all('SELECT * FROM sync_queue WHERE task_id = ?', [task.id]);
-      expect(queueItems.length).toBe(2); // create and update
+      expect(queueItems.length).toBe(2); 
       expect(queueItems[queueItems.length - 1].operation).toBe('update');
     });
   });
 
   describe('sync', () => {
     it('should process all items in sync queue', async () => {
-      // Create tasks that need syncing
+      
       const task1 = await taskService.createTask({ title: 'Task 1' });
       const task2 = await taskService.createTask({ title: 'Task 2' });
 
-      // Mock successful sync response
+     
       vi.mocked(axios.post).mockResolvedValueOnce({
         data: {
           processed_items: [
@@ -93,14 +93,14 @@ describe('SyncService', () => {
     it('should handle sync failures gracefully', async () => {
       const task = await taskService.createTask({ title: 'Task' });
 
-      // Mock failed sync
+     
       vi.mocked(axios.post).mockRejectedValueOnce(new Error('Network error'));
 
       const result = await syncService.sync();
       
       expect(result.success).toBe(false);
       
-      // --- THIS IS THE FIX ---
+      
       // A graceful failure just adds an error and retries.
       // It doesn't become a "failed_item" until retries are exhausted.
       expect(result.failed_items).toBe(0);
@@ -138,7 +138,7 @@ describe('SyncService', () => {
 
       const result = await syncService.sync();
       expect(result.success).toBe(true);
-      expect(result.synced_items).toBe(1); // A conflict is still a "synced" item
+      expect(result.synced_items).toBe(1); 
       
       const updatedTask = await taskService.getTask(task1.id);
       expect(updatedTask?.title).toBe('Server wins');

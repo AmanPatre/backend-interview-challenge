@@ -5,7 +5,6 @@ import {
   SyncResult,
   BatchSyncRequest,
   BatchSyncResponse,
-  // ProcessedItem // Removed unused import
 } from '../types';
 import { Database } from '../db/database';
 
@@ -105,13 +104,10 @@ export class SyncService {
 
           if (response.processed_items) {
             
-            // --- THIS IS THE FIX ---
-            // Create a mutable copy of the batch to track processed items
-            const localBatch = [...batch]; 
+            const localBatch = [...batch];
 
             for (const processed of response.processed_items) {
               
-              // Find the *index* of the item
               const originalItemIndex = localBatch.findIndex(
                 (item) => item.task_id === processed.client_id,
               );
@@ -121,9 +117,7 @@ export class SyncService {
                 continue;
               }
 
-              // Get the item AND remove it from the localBatch
               const originalItem = localBatch.splice(originalItemIndex, 1)[0];
-              // -----------------------
 
               if (processed.status === 'success') {
                 await this.updateSyncStatus(
@@ -211,7 +205,7 @@ export class SyncService {
     let hash = 0;
     for (let i = 0; i < dataString.length; i++) {
         hash = (hash << 5) - hash + dataString.charCodeAt(i);
-        hash |= 0; // Convert to 32bit integer
+        hash |= 0;
     }
     return `${items.length}-${firstId}-${lastId}-${hash}`;
   }
@@ -223,7 +217,7 @@ export class SyncService {
     const requestPayload: BatchSyncRequest = {
       items: items,
       client_timestamp: new Date(),
-      checksum: this.generateChecksum(items), // Correctly uses optional property
+      checksum: this.generateChecksum(items),
     };
 
     try {
@@ -278,7 +272,6 @@ export class SyncService {
     if (resolvedData && status === 'synced') {
         const updatesFromResolved: { [key: string]: DbParam } = {};
         for (const [key, value] of Object.entries(resolvedData)) {
-            // Only include fields relevant to the Task model
             if (value !== undefined && ['title', 'description', 'completed', 'is_deleted', 'updated_at', 'server_id', 'id'].includes(key)) {
                 if (value instanceof Date) {
                     updatesFromResolved[key] = value.toISOString();
@@ -310,14 +303,12 @@ export class SyncService {
          params.push(serverId);
     }
 
-    // Filter out undefined before adding taskId
     const definedParams = params.filter(p => p !== undefined);
     definedParams.push(taskId);
 
     if (setClauses.length > 0) {
         const updateTaskSql = `UPDATE tasks SET ${setClauses.join(', ')} WHERE id = ?`;
         try {
-            // Final type assertion for db.run
             const finalParams: DbParam[] = definedParams as DbParam[];
             await this.db.run(updateTaskSql, finalParams);
         } catch (updateError) {
@@ -372,7 +363,7 @@ export class SyncService {
       });
     } else {
       const currentStatusRow = await this.db.get(`SELECT sync_status FROM tasks WHERE id = ?`, [item.task_id]);
-      if (currentStatusRow?.sync_status !== 'failed') { // Avoid overwriting 'failed' with 'error'
+      if (currentStatusRow?.sync_status !== 'failed') {
           await this.updateTaskSyncStatusBatch([item.task_id], 'error');
       }
       const updateQueueSql = `
@@ -400,7 +391,6 @@ export class SyncService {
       console.log('Connectivity check: Server is reachable.');
       return true;
     } catch (error) {
-       // Log only the error message if it's an Error instance
       const message = error instanceof Error ? error.message : String(error);
       console.warn('Connectivity check: Server is unreachable.', message);
       return false;

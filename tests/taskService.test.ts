@@ -42,7 +42,7 @@ describe('TaskService', () => {
 
       const task = await taskService.createTask(taskData);
       
-      // Check if task was added to sync queue
+      
       const syncQueue = await db.all('SELECT * FROM sync_queue WHERE task_id = ?', [task.id]);
       expect(syncQueue.length).toBe(1);
       expect(syncQueue[0].operation).toBe('create');
@@ -51,10 +51,10 @@ describe('TaskService', () => {
 
   describe('updateTask', () => {
     it('should update an existing task', async () => {
-      // First create a task
+      
       const task = await taskService.createTask({ title: 'Original Title' });
       
-      // Update the task
+      
       const updated = await taskService.updateTask(task.id, {
         title: 'Updated Title',
         completed: true,
@@ -79,7 +79,7 @@ describe('TaskService', () => {
       const result = await taskService.deleteTask(task.id);
       expect(result).toBe(true);
 
-      // Verify task is soft deleted
+      
       const deleted = await db.get('SELECT * FROM tasks WHERE id = ?', [task.id]);
       expect(deleted.is_deleted).toBe(1);
       expect(deleted.sync_status).toBe('pending');
@@ -93,12 +93,12 @@ describe('TaskService', () => {
 
   describe('getAllTasks', () => {
     it('should return only non-deleted tasks', async () => {
-      // Create some tasks
+     
       await taskService.createTask({ title: 'Task 1' });
       await taskService.createTask({ title: 'Task 2' });
       const toDelete = await taskService.createTask({ title: 'Task 3' });
       
-      // Delete one task
+      
       await taskService.deleteTask(toDelete.id);
 
       const tasks = await taskService.getAllTasks();
@@ -109,11 +109,11 @@ describe('TaskService', () => {
 
   describe('getTasksNeedingSync', () => {
     it('should return tasks with pending or error sync status', async () => {
-      // Create tasks with different sync statuses
+      
       const task1 = await taskService.createTask({ title: 'Pending Task' });
       const task2 = await taskService.createTask({ title: 'Another Pending' });
       
-      // Manually update one task to 'synced' status
+      
       await db.run('UPDATE tasks SET sync_status = ? WHERE id = ?', ['synced', task2.id]);
 
       const needingSync = await taskService.getTasksNeedingSync();

@@ -1,46 +1,40 @@
 import { v4 as uuidv4 } from 'uuid';
-import { Task, SyncQueueItem } from '../types'; // Ensure Task is imported
+import { Task, SyncQueueItem } from '../types';
 import { Database } from '../db/database';
 
 type DbParam = string | number | null;
 
-// Describes the raw row from the tasks table
 interface TaskDbRow {
   id: string;
   title: string;
-  description: string | null; // DB might return null
-  completed: number;          // DB stores boolean as 0 or 1
-  created_at: string;         // DB returns ISO string
-  updated_at: string;         // DB returns ISO string
-  is_deleted: number;         // DB stores boolean as 0 or 1
-  sync_status: 'pending' | 'synced' | 'error' | 'in-progress' | 'failed'; // Match Task['sync_status']
-  server_id: string | null;   // DB might return null
-  last_synced_at: string | null; // DB returns ISO string or null
+  description: string | null;
+  completed: number;
+  created_at: string;
+  updated_at: string;
+  is_deleted: number;
+  sync_status: 'pending' | 'synced' | 'error' | 'in-progress' | 'failed';
+  server_id: string | null;
+  last_synced_at: string | null;
 }
 
 export class TaskService {
   constructor(private db: Database) {}
 
-  // --- FIX: Changed 'any' to 'TaskDbRow | null' and adjusted logic ---
   private mapRowToTask(row: TaskDbRow | null): Task | null {
     if (!row) return null;
     return {
       id: row.id,
       title: row.title,
-      // Use nullish coalescing for description
       description: row.description ?? undefined,
-      completed: !!row.completed, // Convert number (0/1) to boolean
+      completed: !!row.completed,
       created_at: new Date(row.created_at),
       updated_at: new Date(row.updated_at),
-      is_deleted: !!row.is_deleted, // Convert number (0/1) to boolean
-      // Ensure the type matches the Task interface sync_status
-      sync_status: row.sync_status || 'pending', // Default to pending if null/undefined in DB for some reason
-      // Use nullish coalescing for server_id
+      is_deleted: !!row.is_deleted,
+      sync_status: row.sync_status || 'pending',
       server_id: row.server_id ?? undefined,
       last_synced_at: row.last_synced_at ? new Date(row.last_synced_at) : null,
     };
   }
-  // ---------------------------------------------------------------------
 
   private async addToSyncQueue(
     taskId: string,
@@ -84,7 +78,7 @@ export class TaskService {
       is_deleted: false,
       sync_status: 'pending',
       server_id: undefined,
-      last_synced_at: null, // Assign null directly (matches Task type)
+      last_synced_at: null,
     };
 
     const sql = `
@@ -103,7 +97,7 @@ export class TaskService {
       newTask.is_deleted ? 1 : 0,
       newTask.sync_status,
       newTask.server_id,
-      newTask.last_synced_at, // Pass null
+      newTask.last_synced_at,
     ]);
 
     await this.addToSyncQueue(newTask.id, 'create', { ...newTask });
@@ -126,27 +120,24 @@ export class TaskService {
     const allUpdates = { ...updates, ...metadataUpdates };
 
     const fields = Object.keys(allUpdates);
-    // Filter out undefined and ensure keys are valid Task keys before creating clauses
     const validFields = fields.filter(field =>
         allUpdates[field as keyof typeof allUpdates] !== undefined &&
-        ['title', 'description', 'completed', 'updated_at', 'sync_status'].includes(field) // Only allow specific fields
+        ['title', 'description', 'completed', 'updated_at', 'sync_status'].includes(field)
     );
 
 
     if (validFields.length === 0) {
         console.log("No valid update fields provided, only updating metadata if necessary.");
-        // Check if only metadata needs updating (e.g., if invalid fields were passed)
         if (Object.keys(updates).length > 0) {
             const tsUpdateSql = `UPDATE tasks SET updated_at = ?, sync_status = 'pending' WHERE id = ?`;
             await this.db.run(tsUpdateSql, [now.toISOString(), id]);
-            await this.addToSyncQueue(id, 'update', updates); // Add original updates to queue
+            await this.addToSyncQueue(id, 'update', updates);
         }
-        return this.getTask(id); // Return potentially unchanged task (except metadata)
+        return this.getTask(id);
     }
 
     const setClauses = validFields.map(field => `${field} = ?`).join(', ');
 
-    // Convert values to DbParam[] right here
     const params: DbParam[] = validFields.map(field => {
         const value = allUpdates[field as keyof typeof allUpdates];
         if (value instanceof Date) {
@@ -155,18 +146,16 @@ export class TaskService {
         if (typeof value === 'boolean') {
             return value ? 1 : 0;
         }
-        // Ensure only string, number, null or specific string literals are returned
         return (typeof value === 'string' || typeof value === 'number' || value === null) ? value : null;
     });
 
-    params.push(id); // Add ID for WHERE clause
+    params.push(id);
 
     const sql = `UPDATE tasks SET ${setClauses} WHERE id = ?`;
 
-    await this.db.run(sql, params); // Use the correctly typed params array
+    await this.db.run(sql, params);
     console.log(`Updated task ${id}.`);
 
-    // Only queue the *requested* updates, not the metadata ones
     await this.addToSyncQueue(id, 'update', updates);
 
     return this.getTask(id);
@@ -196,21 +185,18 @@ export class TaskService {
 
   async getTask(id: string): Promise<Task | null> {
     const sql = `SELECT * FROM tasks WHERE id = ? AND is_deleted = 0`;
-    // Cast the result row to the expected DB row type
     const row = await this.db.get(sql, [id]) as TaskDbRow | null;
     return this.mapRowToTask(row);
   }
 
   async getAllTasks(): Promise<Task[]> {
     const sql = `SELECT * FROM tasks WHERE is_deleted = 0 ORDER BY created_at DESC`;
-    // Cast the result rows to the expected DB row type
     const rows = await this.db.all(sql) as TaskDbRow[];
     return rows.map(row => this.mapRowToTask(row)).filter((task): task is Task => task !== null);
   }
 
   async getTasksNeedingSync(): Promise<Task[]> {
     const sql = `SELECT * FROM tasks WHERE sync_status = 'pending' OR sync_status = 'error'`;
-     // Cast the result rows to the expected DB row type
     const rows = await this.db.all(sql) as TaskDbRow[];
     return rows.map(row => this.mapRowToTask(row)).filter((task): task is Task => task !== null);
   }

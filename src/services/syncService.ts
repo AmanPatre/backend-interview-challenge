@@ -104,14 +104,26 @@ export class SyncService {
           const response = await this.processBatch(batch);
 
           if (response.processed_items) {
+            
+            // --- THIS IS THE FIX ---
+            // Create a mutable copy of the batch to track processed items
+            const localBatch = [...batch]; 
+
             for (const processed of response.processed_items) {
-              const originalItem = batch.find(
+              
+              // Find the *index* of the item
+              const originalItemIndex = localBatch.findIndex(
                 (item) => item.task_id === processed.client_id,
               );
-              if (!originalItem) {
-                console.warn(`Received response for unknown client_id: ${processed.client_id} in batch ${Math.floor(i / this.batchSize) + 1}.`);
+
+              if (originalItemIndex === -1) {
+                console.warn(`Received response for unknown client_id: ${processed.client_id} or item already processed in this batch.`);
                 continue;
               }
+
+              // Get the item AND remove it from the localBatch
+              const originalItem = localBatch.splice(originalItemIndex, 1)[0];
+              // -----------------------
 
               if (processed.status === 'success') {
                 await this.updateSyncStatus(
@@ -252,8 +264,8 @@ export class SyncService {
   ): Promise<void> {
     console.log(`Updating task ${taskId} status to ${status} (queue item: ${queueItemId}).`);
     const now = new Date();
-    let setClauses: string[] = [];
-    let params: (DbParam | undefined)[] = [];
+    const setClauses: string[] = [];
+    const params: (DbParam | undefined)[] = [];
 
     setClauses.push('sync_status = ?');
     params.push(status);
@@ -395,4 +407,3 @@ export class SyncService {
     }
   }
 }
-

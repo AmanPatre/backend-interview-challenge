@@ -1,6 +1,5 @@
 import sqlite3 from 'sqlite3';
 
-
 const sqlite = sqlite3.verbose();
 
 export class Database {
@@ -48,27 +47,33 @@ export class Database {
   }
 
   // Helper methods
-  run(sql: string, params: any[] = []): Promise<void> {
+
+  // --- FIX: Explicitly type 'err' in the callback ---
+  run(sql: string, params: any[] = []): Promise<void> { // eslint-disable-line @typescript-eslint/no-explicit-any
     return new Promise((resolve, reject) => {
-      this.db.run(sql, params, (err) => {
+      // Type the error parameter explicitly
+      this.db.run(sql, params, (err: Error | null) => {
         if (err) reject(err);
         else resolve();
       });
     });
   }
+  // ---------------------------------------------
 
-  get(sql: string, params: any[] = []): Promise<any> {
+  get(sql: string, params: any[] = []): Promise<any> { // eslint-disable-line @typescript-eslint/no-explicit-any
     return new Promise((resolve, reject) => {
-      this.db.get(sql, params, (err, row) => {
+      // Type the error parameter explicitly
+      this.db.get(sql, params, (err: Error | null, row: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
         if (err) reject(err);
         else resolve(row);
       });
     });
   }
 
-  all(sql: string, params: any[] = []): Promise<any[]> {
+  all(sql: string, params: any[] = []): Promise<any[]> { // eslint-disable-line @typescript-eslint/no-explicit-any
     return new Promise((resolve, reject) => {
-      this.db.all(sql, params, (err, rows) => {
+      // Type the error parameter explicitly
+      this.db.all(sql, params, (err: Error | null, rows: any[]) => { // eslint-disable-line @typescript-eslint/no-explicit-any
         if (err) reject(err);
         else resolve(rows);
       });
@@ -77,7 +82,8 @@ export class Database {
 
   close(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.db.close((err) => {
+      // Type the error parameter explicitly
+      this.db.close((err: Error | null) => {
         if (err) reject(err);
         else resolve();
       });

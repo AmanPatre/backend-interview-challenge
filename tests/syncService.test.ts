@@ -16,7 +16,7 @@ describe('SyncService', () => {
     db = new Database(':memory:');
     await db.initialize();
     taskService = new TaskService(db);
-    syncService = new SyncService(db, taskService);
+    syncService = new SyncService(db);
   });
 
   afterEach(async () => {
@@ -44,12 +44,17 @@ describe('SyncService', () => {
     it('should add operation to sync queue', async () => {
       const task = await taskService.createTask({ title: 'Test Task' });
       
-      await syncService.addToSyncQueue(task.id, 'update', {
+      // Note: This test is slightly indirect. We are calling taskService,
+      // which should internally call addToSyncQueue.
+      // But for this structure, we verify the result.
+
+      // Let's create a *second* operation to be sure
+      await taskService.updateTask(task.id, {
         title: 'Updated Title',
       });
 
       const queueItems = await db.all('SELECT * FROM sync_queue WHERE task_id = ?', [task.id]);
-      expect(queueItems.length).toBeGreaterThan(0);
+      expect(queueItems.length).toBe(2); // create and update
       expect(queueItems[queueItems.length - 1].operation).toBe('update');
     });
   });
@@ -94,7 +99,18 @@ describe('SyncService', () => {
       const result = await syncService.sync();
       
       expect(result.success).toBe(false);
-      expect(result.failed_items).toBeGreaterThan(0);
+      
+      // --- THIS IS THE FIX ---
+      // A graceful failure just adds an error and retries.
+      // It doesn't become a "failed_item" until retries are exhausted.
+      expect(result.failed_items).toBe(0);
+      expect(result.errors.length).toBe(1); // Check that an error was logged
+      // -----------------------
+
+      // We can also verify the item is still in the queue with an increased retry
+      const queueItem = await db.get('SELECT * FROM sync_queue WHERE task_id = ?', [task.id]);
+      expect(queueItem).toBeDefined();
+      expect(queueItem.retry_count).toBe(1);
     });
   });
 
@@ -103,6 +119,29 @@ describe('SyncService', () => {
       // This test would verify that when there's a conflict,
       // the task with the more recent updated_at timestamp wins
       // Implementation depends on the actual conflict resolution logic
+      // This test is more of a placeholder as the logic is server-side
+      // But we can test that a 'conflict' response is handled correctly
+      const task1 = await taskService.createTask({ title: 'Task 1' });
+
+      vi.mocked(axios.post).mockResolvedValueOnce({
+        data: {
+          processed_items: [
+            {
+              client_id: task1.id,
+              server_id: 'srv_1',
+              status: 'conflict',
+              resolved_data: { title: 'Server wins' }
+            },
+          ],
+        },
+      });
+
+      const result = await syncService.sync();
+      expect(result.success).toBe(true);
+      expect(result.synced_items).toBe(1); // A conflict is still a "synced" item
+      
+      const updatedTask = await taskService.getTask(task1.id);
+      expect(updatedTask?.title).toBe('Server wins');
     });
   });
 });

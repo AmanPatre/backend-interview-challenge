@@ -6,9 +6,9 @@ export interface Task {
   created_at: Date;
   updated_at: Date;
   is_deleted: boolean;
-  sync_status?: 'pending' | 'synced' | 'error';
+  sync_status?: 'pending' | 'synced' | 'error' | 'in-progress' | 'failed';
   server_id?: string;
-  last_synced_at?: Date;
+  last_synced_at?: Date | null; // Correct type: Allow Date or null
 }
 
 export interface SyncQueueItem {
@@ -35,22 +35,22 @@ export interface SyncError {
   timestamp: Date;
 }
 
-export interface ConflictResolution {
-  strategy: 'last-write-wins' | 'client-wins' | 'server-wins';
-  resolved_task: Task;
+// Keep this interface for clarity in BatchSyncResponse
+export interface ProcessedItem {
+    client_id: string;
+    server_id?: string;
+    status: 'success' | 'conflict' | 'error';
+    resolved_data?: Partial<Task>;
+    error?: string;
 }
 
 export interface BatchSyncRequest {
   items: SyncQueueItem[];
   client_timestamp: Date;
+  checksum?: string; // Ensure checksum is optional here (matches usage)
 }
 
 export interface BatchSyncResponse {
-  processed_items: {
-    client_id: string;
-    server_id: string;
-    status: 'success' | 'conflict' | 'error';
-    resolved_data?: Task;
-    error?: string;
-  }[];
+  processed_items: ProcessedItem[];
 }
+

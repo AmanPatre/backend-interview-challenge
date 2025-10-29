@@ -5,8 +5,11 @@ import {
   SyncResult,
   BatchSyncRequest,
   BatchSyncResponse,
+  ProcessedItem 
 } from '../types';
 import { Database } from '../db/database';
+
+type DbParam = string | number | null;
 
 interface SyncQueueDbItem {
   id: string;
@@ -157,7 +160,11 @@ export class SyncService {
           console.error(`Batch ${Math.floor(i / this.batchSize) + 1} sync failed:`, batchError);
           result.success = false;
           for (const item of batch) {
-             await this.updateTaskSyncStatusBatch([item.task_id], 'error');
+             // Revert status only if it's still 'in-progress' before handling error
+             const currentStatus = await this.db.get(`SELECT sync_status FROM tasks WHERE id = ?`, [item.task_id]);
+             if (currentStatus?.sync_status === 'in-progress') {
+                await this.updateTaskSyncStatusBatch([item.task_id], 'error');
+             }
             await this.handleSyncError(
               item,
               batchError as Error,
@@ -216,6 +223,10 @@ export class SyncService {
       );
 
       console.log('Received batch response from server.');
+      // Basic validation of response structure
+      if (!response.data || !Array.isArray(response.data.processed_items)) {
+          throw new Error("Invalid batch response structure from server.");
+      }
       return response.data;
     } catch (error) {
       console.error('Error sending batch to server:', error);
@@ -230,7 +241,8 @@ export class SyncService {
           console.error('Error setting up request:', axiosError.message);
         }
       }
-      throw error;
+      // Re-throw a generic error for the sync loop to handle
+      throw new Error(`Failed to process batch: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -244,64 +256,71 @@ export class SyncService {
     console.log(`Updating task ${taskId} status to ${status} (queue item: ${queueItemId}).`);
     const now = new Date();
     let setClauses: string[] = [];
-    // Correct type for params array to match potential DB values
-    let params: (string | number | null | undefined)[] = [];
+    let params: (DbParam | undefined)[] = [];
 
-    setClauses.push('sync_status = ?', 'last_synced_at = ?');
-    params.push(status, now.toISOString());
+    setClauses.push('sync_status = ?');
+    params.push(status);
+
+    // Only update last_synced_at on success
+    if (status === 'synced') {
+        setClauses.push('last_synced_at = ?');
+        params.push(now.toISOString());
+    }
 
     if (resolvedData && status === 'synced') {
-        const updatesFromResolved: Partial<Task> = {
-            title: resolvedData.title,
-            description: resolvedData.description,
-            completed: resolvedData.completed,
-            is_deleted: resolvedData.is_deleted,
-            updated_at: resolvedData.updated_at ? new Date(resolvedData.updated_at) : now,
-            server_id: serverId || resolvedData.server_id || resolvedData.id,
-        };
-
-        for (const [key, value] of Object.entries(updatesFromResolved)) {
-            if (value !== undefined) {
-                 // Correctly type dbValue before assignment
-                 let dbValue: string | number | null;
-                 if (value instanceof Date) {
-                     dbValue = value.toISOString();
-                 } else if (typeof value === 'boolean') {
-                    dbValue = value ? 1 : 0;
-                 } else {
-                     dbValue = value; // Assumes string or null/undefined handled by filter later
-                 }
-
-                 if (key === 'server_id' && setClauses.includes('server_id = ?')) continue;
-
-                 setClauses.push(`${key} = ?`);
-                 params.push(dbValue);
+        // Prepare updates, converting types as needed for DB
+        const updatesFromResolved: { [key: string]: DbParam } = {};
+        for (const [key, value] of Object.entries(resolvedData)) {
+            if (value !== undefined && ['title', 'description', 'completed', 'is_deleted', 'updated_at', 'server_id', 'id'].includes(key)) {
+                if (value instanceof Date) {
+                    updatesFromResolved[key] = value.toISOString();
+                } else if (typeof value === 'boolean') {
+                    updatesFromResolved[key] = value ? 1 : 0;
+                } else if (typeof value === 'string' || typeof value === 'number' || value === null) {
+                    updatesFromResolved[key] = value;
+                }
             }
         }
-        if (serverId && !updatesFromResolved.server_id && !setClauses.includes('server_id = ?')) {
-             setClauses.push('server_id = ?');
-             params.push(serverId);
+
+        // Use server's updated_at if provided, otherwise keep local update time for consistency? No, use server time.
+         updatesFromResolved['updated_at'] = resolvedData.updated_at ? new Date(resolvedData.updated_at).toISOString() : now.toISOString();
+
+        // Ensure server_id is set correctly
+        const finalServerId = serverId || resolvedData.server_id || resolvedData.id;
+        if(finalServerId) {
+            updatesFromResolved['server_id'] = finalServerId;
         }
 
-    } else if (serverId && !setClauses.includes('server_id = ?')) {
+        // Add clauses and params for resolved data
+        for (const [key, value] of Object.entries(updatesFromResolved)) {
+             // Avoid adding duplicates if already present (e.g., server_id)
+            if (!setClauses.some(clause => clause.startsWith(key + ' ='))) {
+                setClauses.push(`${key} = ?`);
+                params.push(value);
+            }
+        }
+    } else if (serverId && !setClauses.some(clause => clause.startsWith('server_id ='))) {
+         // Add server_id if provided and not already included via resolvedData
          setClauses.push('server_id = ?');
          params.push(serverId);
     }
 
     const filteredParams = params.filter(p => p !== undefined);
-    filteredParams.push(taskId);
+    filteredParams.push(taskId); // For the WHERE clause
 
     if (setClauses.length > 0) {
         const updateTaskSql = `UPDATE tasks SET ${setClauses.join(', ')} WHERE id = ?`;
         try {
-            // Ensure filteredParams only contains string, number, or null
-            const finalParams: (string | number | null)[] = filteredParams.map(p => (p === undefined ? null : p));
+            const finalParams: DbParam[] = filteredParams.map(p => (p === undefined ? null : p as DbParam));
             await this.db.run(updateTaskSql, finalParams);
         } catch (updateError) {
              console.error(`Failed to update task ${taskId} status to ${status}:`, updateError);
+             // Consider not deleting queue item if task update fails?
+             // For now, proceed to delete queue item.
         }
     }
 
+    // Always delete queue item if status is terminal (synced/failed)
     const deleteQueueSql = `DELETE FROM sync_queue WHERE id = ?`;
     try {
         await this.db.run(deleteQueueSql, [queueItemId]);
@@ -310,6 +329,7 @@ export class SyncService {
         console.error(`Failed to remove item ${queueItemId} from sync queue:`, deleteError);
     }
   }
+
 
   private async updateTaskSyncStatusBatch(
     taskIds: string[],
@@ -338,6 +358,7 @@ export class SyncService {
 
     if (newRetryCount > this.maxRetries) {
       console.error(`Max retries exceeded for task ${item.task_id}. Marking as failed.`);
+      // Update task status to failed, remove from queue
       await this.updateSyncStatus(item.id, item.task_id, 'failed', undefined, undefined);
       result.failed_items++;
       result.errors.push({
@@ -347,7 +368,12 @@ export class SyncService {
         timestamp: new Date(),
       });
     } else {
-       await this.updateTaskSyncStatusBatch([item.task_id], 'error');
+      // Update task status to error (if not already failed)
+      const currentStatus = await this.db.get(`SELECT sync_status FROM tasks WHERE id = ?`, [item.task_id]);
+      if (currentStatus?.sync_status !== 'failed') {
+          await this.updateTaskSyncStatusBatch([item.task_id], 'error');
+      }
+      // Update queue item
       const updateQueueSql = `
         UPDATE sync_queue
         SET retry_count = ?, error_message = ?
@@ -358,6 +384,7 @@ export class SyncService {
       } catch (queueUpdateError) {
            console.error(`Failed to update retry count for queue item ${item.id}:`, queueUpdateError);
       }
+       // Log temporary error occurrence
        result.errors.push({
         task_id: item.task_id,
         operation: item.operation,
@@ -373,7 +400,7 @@ export class SyncService {
       console.log('Connectivity check: Server is reachable.');
       return true;
     } catch (error) {
-      console.warn('Connectivity check: Server is unreachable.', error instanceof Error ? error.message : error);
+      console.warn('Connectivity check: Server is unreachable.', error instanceof Error ? error.message : '');
       return false;
     }
   }

@@ -11,7 +11,7 @@ export function createSyncRouter(db: Database): Router {
     try {
       const isOnline = await syncService.checkConnectivity();
       if (!isOnline) {
-        return res.status(503).json({ // Added return
+        return res.status(503).json({ // Return added
           error: 'Service Unavailable: Cannot sync while offline.',
           timestamp: new Date().toISOString(),
           path: req.path,
@@ -19,10 +19,11 @@ export function createSyncRouter(db: Database): Router {
       }
 
       const syncResult = await syncService.sync();
-      res.status(200).json(syncResult); // Ensure response is sent
+      res.status(200).json(syncResult); // Sends response
     } catch (error) {
-      next(error); // Pass error if sync fails
+      next(error); // Passes control
     }
+    // No return needed here
   });
 
   router.get('/status', async (
@@ -49,10 +50,11 @@ export function createSyncRouter(db: Database): Router {
         last_sync_timestamp: lastSyncTimestamp,
         is_online: isOnline,
         sync_queue_size: syncQueueSize,
-      });
+      }); // Sends response
     } catch (error) {
-      next(error);
+      next(error); // Passes control
     }
+     // No return needed here
   });
 
   router.post('/batch', async (req: Request, res: Response ) => {
@@ -86,14 +88,16 @@ export function createSyncRouter(db: Database): Router {
         console.log(`Simulating conflict resolution for task ${items[1].task_id}`);
      }
 
-    res.status(200).json({ processed_items });
+    res.status(200).json({ processed_items }); // Sends response
+     // No return needed here
   });
 
   router.get('/health', async (
      _: Request,
      res: Response
   ) => {
-    res.json({ status: 'ok', timestamp: new Date() });
+    res.json({ status: 'ok', timestamp: new Date() }); // Sends response
+    // No return needed here
   });
 
   return router;

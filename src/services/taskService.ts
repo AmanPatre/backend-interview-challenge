@@ -2,6 +2,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { Task, SyncQueueItem } from '../types';
 import { Database } from '../db/database';
 
+type DbParam = string | number | null;
+
 export class TaskService {
   constructor(private db: Database) {}
 
@@ -17,8 +19,7 @@ export class TaskService {
       is_deleted: !!row.is_deleted,
       sync_status: row.sync_status,
       server_id: row.server_id,
-      // Correctly return null if DB value is null/undefined
-      last_synced_at: row.last_synced_at ? new Date(row.last_synced_at) : null,
+      last_synced_at: row.last_synced_at ? new Date(row.last_synced_at) : null, // Correctly returns null
     };
   }
 
@@ -64,7 +65,7 @@ export class TaskService {
       is_deleted: false,
       sync_status: 'pending',
       server_id: undefined,
-      last_synced_at: null,
+      last_synced_at: null, // Assign null directly (matches Task type)
     };
 
     const sql = `
@@ -83,7 +84,7 @@ export class TaskService {
       newTask.is_deleted ? 1 : 0,
       newTask.sync_status,
       newTask.server_id,
-      newTask.last_synced_at,
+      newTask.last_synced_at, // Pass null
     ]);
 
     await this.addToSyncQueue(newTask.id, 'create', { ...newTask });
@@ -99,43 +100,53 @@ export class TaskService {
     }
 
     const now = new Date();
-    const updatesWithTimestamp = {
-      ...updates,
-      updated_at: now.toISOString(),
-      sync_status: 'pending',
+    const metadataUpdates = {
+        updated_at: now,
+        sync_status: 'pending' as const
     };
+    const allUpdates = { ...updates, ...metadataUpdates };
 
-    const fields = Object.keys(updatesWithTimestamp);
-    const validFields = fields.filter(field => updatesWithTimestamp[field as keyof typeof updatesWithTimestamp] !== undefined);
+    const fields = Object.keys(allUpdates);
+    const validFields = fields.filter(field => allUpdates[field as keyof typeof allUpdates] !== undefined);
+
     if (validFields.length === 0) {
-        console.log("No valid fields provided for update.");
-        return existingTask;
+        console.log("No valid fields provided for update, only updating timestamp/status.");
+        // Still need to update timestamp and status if only invalid fields were passed
+        const tsUpdateSql = `UPDATE tasks SET updated_at = ?, sync_status = 'pending' WHERE id = ?`;
+        await this.db.run(tsUpdateSql, [now.toISOString(), id]);
+        if (Object.keys(updates).length > 0) { // Check original updates
+            await this.addToSyncQueue(id, 'update', updates);
+        }
+        return this.getTask(id);
     }
 
-    const setClauses = validFields
-      .map((field ) => {
-          const columnName = field;
-          return `${columnName} = ?`;
-      })
-      .join(', ');
+    const setClauses = validFields.map(field => `${field} = ?`).join(', ');
 
-    const params = validFields.map(field => {
-        const value = updatesWithTimestamp[field as keyof typeof updatesWithTimestamp];
-        return typeof value === 'boolean' ? (value ? 1 : 0) : value;
+    // Convert values to DbParam[] right here
+    const params: DbParam[] = validFields.map(field => {
+        const value = allUpdates[field as keyof typeof allUpdates];
+        if (value instanceof Date) {
+            return value.toISOString();
+        }
+        if (typeof value === 'boolean') {
+            return value ? 1 : 0;
+        }
+        // Ensure only string, number, or null are returned
+        return (typeof value === 'string' || typeof value === 'number' || value === null) ? value : null;
     });
 
-    params.push(id);
+    params.push(id); // Add ID for WHERE clause
 
     const sql = `UPDATE tasks SET ${setClauses} WHERE id = ?`;
-    // Ensure params only contain types suitable for DB
-    const finalParams: (string | number | null)[] = params.map(p => (p === undefined ? null : p));
-    await this.db.run(sql, finalParams);
-     console.log(`Updated task ${id}.`);
+
+    await this.db.run(sql, params); // Use the correctly typed params array
+    console.log(`Updated task ${id}.`);
 
     await this.addToSyncQueue(id, 'update', updates);
 
     return this.getTask(id);
-  }
+}
+
 
   async deleteTask(id: string): Promise<boolean> {
     const existingTask = await this.getTask(id);

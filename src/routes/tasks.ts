@@ -14,27 +14,28 @@ export function createTaskRouter(db: Database): Router {
    ) => {
     try {
       const tasks = await taskService.getAllTasks();
-      // Ensure response is sent or error is passed
-      res.json(tasks);
+      res.json(tasks); // Sends response
     } catch (error) {
-      next(error);
+      next(error); // Passes control
     }
+    // No return needed - execution ends implicitly after res.json or next()
   });
 
   router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     try {
       const task = await taskService.getTask(req.params.id);
       if (!task) {
-        return res.status(404).json({ // Added return
+        return res.status(404).json({ // Returns early
           error: 'Task not found',
           timestamp: new Date().toISOString(),
           path: req.path
          });
       }
-      res.json(task);
+      res.json(task); // Sends response
     } catch (error) {
-      next(error);
+      next(error); // Passes control
     }
+     // No return needed
   });
 
   router.post('/', async (req: Request, res: Response, next: NextFunction) => {
@@ -42,10 +43,10 @@ export function createTaskRouter(db: Database): Router {
       const { title, description } = req.body;
 
       if (!title || typeof title !== 'string' || title.trim() === '') {
-        return res.status(400).json({ error: 'Title is required and must be a non-empty string' }); // Added return
+        return res.status(400).json({ error: 'Title is required and must be a non-empty string' }); // Returns early
       }
       if (description !== undefined && typeof description !== 'string') {
-        return res.status(400).json({ error: 'Description must be a string if provided' }); // Added return
+        return res.status(400).json({ error: 'Description must be a string if provided' }); // Returns early
       }
 
       const taskData: Partial<Task> = { title: title.trim() };
@@ -54,10 +55,11 @@ export function createTaskRouter(db: Database): Router {
       }
 
       const newTask = await taskService.createTask(taskData);
-      res.status(201).json(newTask);
+      res.status(201).json(newTask); // Sends response
     } catch (error) {
-      next(error);
+      next(error); // Passes control
     }
+     // No return needed
   });
 
   router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
@@ -70,44 +72,45 @@ export function createTaskRouter(db: Database): Router {
 
         if (title !== undefined) {
             if (typeof title !== 'string' || title.trim() === '') {
-                return res.status(400).json({ error: 'Title must be a non-empty string if provided' }); // Added return
+                return res.status(400).json({ error: 'Title must be a non-empty string if provided' }); // Returns early
             }
             updates.title = title.trim();
             hasUpdate = true;
         }
         if (description !== undefined) {
              if (typeof description !== 'string') {
-                return res.status(400).json({ error: 'Description must be a string if provided' }); // Added return
+                return res.status(400).json({ error: 'Description must be a string if provided' }); // Returns early
              }
              updates.description = description.length > 500 ? description.substring(0, 500) : description;
             hasUpdate = true;
         }
         if (completed !== undefined) {
             if (typeof completed !== 'boolean') {
-                return res.status(400).json({ error: 'Completed must be a boolean if provided' }); // Added return
+                return res.status(400).json({ error: 'Completed must be a boolean if provided' }); // Returns early
             }
             updates.completed = completed;
             hasUpdate = true;
         }
 
         if (!hasUpdate) {
-            return res.status(400).json({ error: 'At least one field (title, description, completed) must be provided for update' }); // Added return
+            return res.status(400).json({ error: 'At least one field (title, description, completed) must be provided for update' }); // Returns early
         }
 
       const updatedTask = await taskService.updateTask(id, updates);
 
       if (!updatedTask) {
-        return res.status(404).json({ // Added return
+        return res.status(404).json({ // Returns early
            error: 'Task not found',
            timestamp: new Date().toISOString(),
            path: req.path
          });
       }
 
-      res.status(200).json(updatedTask);
+      res.status(200).json(updatedTask); // Sends response
     } catch (error) {
-      next(error);
+      next(error); // Passes control
     }
+     // No return needed
   });
 
   router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
@@ -116,17 +119,18 @@ export function createTaskRouter(db: Database): Router {
       const success = await taskService.deleteTask(id);
 
       if (!success) {
-        return res.status(404).json({ // Added return
+        return res.status(404).json({ // Returns early
             error: 'Task not found',
             timestamp: new Date().toISOString(),
             path: req.path
         });
       }
 
-      res.status(204).send();
+      res.status(204).send(); // Sends response
     } catch (error) {
-      next(error);
+      next(error); // Passes control
     }
+     // No return needed
   });
 
   return router;

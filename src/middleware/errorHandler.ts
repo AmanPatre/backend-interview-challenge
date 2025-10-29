@@ -8,16 +8,23 @@ export function errorHandler(
   err: AppError,
   req: Request,
   res: Response,
-  next: NextFunction
+  _: NextFunction // Mark 'next' as unused
 ): void {
-  console.error('Error:', err);
+  console.error('Error:', err.stack || err); // Log stack trace
 
   const statusCode = err.statusCode || 500;
-  const message = err.message || 'Internal Server Error';
+  const message = process.env.NODE_ENV === 'production' && statusCode === 500
+    ? 'Internal Server Error'
+    : err.message || 'Internal Server Error';
 
-  res.status(statusCode).json({
-    error: message,
-    timestamp: new Date().toISOString(),
-    path: req.path,
-  });
+  if (!res.headersSent) {
+      res.status(statusCode).json({
+        error: message,
+        timestamp: new Date().toISOString(),
+        path: req.path,
+      });
+  } else {
+      console.error("Headers already sent, couldn't send error response.");
+  }
 }
+

@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { SyncService } from '../services/syncService';
 import { Database } from '../db/database';
-import { SyncQueueItem } from '../types';
+import { SyncQueueItem, ProcessedItem } from '../types';
 
 export function createSyncRouter(db: Database): Router {
   const router = Router();
@@ -11,7 +11,7 @@ export function createSyncRouter(db: Database): Router {
     try {
       const isOnline = await syncService.checkConnectivity();
       if (!isOnline) {
-        return res.status(503).json({ // Return added
+        return res.status(503).json({
           error: 'Service Unavailable: Cannot sync while offline.',
           timestamp: new Date().toISOString(),
           path: req.path,
@@ -19,15 +19,15 @@ export function createSyncRouter(db: Database): Router {
       }
 
       const syncResult = await syncService.sync();
-      res.status(200).json(syncResult); // Sends response
+      return res.status(200).json(syncResult); // Added return
     } catch (error) {
-      next(error); // Passes control
+      next(error);
+      return; // Added return after next()
     }
-    // No return needed here
   });
 
   router.get('/status', async (
-     _: Request,
+     _: Request, // Mark req as unused
      res: Response,
      next: NextFunction
    ) => {
@@ -45,16 +45,16 @@ export function createSyncRouter(db: Database): Router {
       const isOnline = await syncService.checkConnectivity();
       const syncQueueSize = pendingSyncCount;
 
-      res.status(200).json({
+      return res.status(200).json({ // Added return
         pending_sync_count: pendingSyncCount,
         last_sync_timestamp: lastSyncTimestamp,
         is_online: isOnline,
         sync_queue_size: syncQueueSize,
-      }); // Sends response
+      });
     } catch (error) {
-      next(error); // Passes control
+      next(error);
+      return; // Added return after next()
     }
-     // No return needed here
   });
 
   router.post('/batch', async (req: Request, res: Response ) => {
@@ -62,17 +62,20 @@ export function createSyncRouter(db: Database): Router {
     console.log('Batch Checksum:', req.body.checksum);
 
     const items: SyncQueueItem[] = req.body.items || [];
-    const processed_items: any[] = items.map((item: SyncQueueItem) => ({
-      client_id: item.task_id,
-      server_id: `srv_${item.task_id.substring(0, 6)}`,
-      status: 'success',
-      resolved_data: item.operation !== 'delete' ? {
-          ...item.data,
-          id: `srv_${item.task_id.substring(0, 6)}`,
-          server_id: `srv_${item.task_id.substring(0, 6)}`,
-          updated_at: new Date().toISOString()
-       } : undefined
-    }));
+    const processed_items: ProcessedItem[] = items.map((item: SyncQueueItem): ProcessedItem => {
+        const serverId = `srv_${item.task_id.substring(0, 6)}`;
+        return {
+            client_id: item.task_id,
+            server_id: serverId,
+            status: 'success',
+            resolved_data: item.operation !== 'delete' ? {
+                ...item.data,
+                id: serverId,
+                server_id: serverId,
+                updated_at: new Date()
+            } : undefined
+        };
+    });
 
      if (processed_items.length > 1 && items[1]?.operation === 'update') {
         processed_items[1].status = 'conflict';
@@ -82,22 +85,19 @@ export function createSyncRouter(db: Database): Router {
             server_id: processed_items[1].server_id,
             title: "Server Title Wins Conflict",
             description: items[1].data.description || "Server added description",
-            completed: items[1].data.completed,
-            updated_at: new Date(Date.now() + 1000).toISOString()
+            updated_at: new Date(Date.now() + 1000)
         };
         console.log(`Simulating conflict resolution for task ${items[1].task_id}`);
      }
 
-    res.status(200).json({ processed_items }); // Sends response
-     // No return needed here
+    return res.status(200).json({ processed_items }); // Added return
   });
 
   router.get('/health', async (
-     _: Request,
+     _: Request, // Mark req as unused
      res: Response
   ) => {
-    res.json({ status: 'ok', timestamp: new Date() }); // Sends response
-    // No return needed here
+    return res.json({ status: 'ok', timestamp: new Date() }); // Added return
   });
 
   return router;
